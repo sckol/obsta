@@ -1,0 +1,2 @@
+`nickname` = ``
+`subagent` =  `codex`

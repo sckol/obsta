@@ -8,3 +8,9 @@ __pycache__/
 # Obsidian workspace state
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
+
+# Local editor, agent and user settings
+/.codex/
+/.obsidian/
+/Configs/obsta.local.md
+# obsta-history: /Configs/obsta.local.md
