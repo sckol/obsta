@@ -37,6 +37,7 @@ RESTART_TEST_TIMEOUT = 60
 # Fault matrices and exhaustive CLI scenarios remain in --self-test-full.
 RESTART_TESTS = (
     'test_signals_and_boundaries',
+    'test_bold_paragraphs_one_activation',
     'test_config',
     'test_local_config',
     'test_orphan_same_tree_and_lost_index',
@@ -99,17 +100,38 @@ def boundaries(text):
     return result
 
 
+def bold_commands(text):
+    """Find individual bold spans, including multiline selections."""
+    document = list(visible(text))
+    allowed = [False] * len(text)
+    for offset, line in _lines(text):
+        allowed[offset:offset + len(line)] = [True] * len(line)
+    for i, included in enumerate(allowed):
+        if not included:
+            document[i] = '\x00'
+    document = ''.join(document)
+    document = BOUNDARY.sub(lambda m: '\x00' * len(m[0]), document)
+    pattern = r'(?<![\\*_])\*\*(?![*_\s])(?P<body>[^\x00]+?)(?<!\s)\*\*(?![*_])'
+    return [(m.start(), m.end(), text[m.start()+2:m.end()-2], 'bold')
+            for m in re.finditer(pattern, document)
+            if m['body'].strip() and not m['body'].startswith(('*', '_'))]
+
+
 def find_commands(text):
-    """Find ** signals and checked items; __ is ordinary bold formatting."""
+    """Join adjacent bold spans into one prompt; also find checked items."""
     found = []
+    for start, end, body, kind in bold_commands(text):
+        if found and not text[found[-1][1]:start].strip():
+            previous = found.pop()
+            body = previous[2] + text[previous[1]:start] + body
+            start = previous[0]
+        found.append((start, end, body, kind))
     document = visible(text)
     for offset, line in _lines(text):
         masked = document[offset:offset + len(line)]
-        for m in re.finditer(r'(?<![\\*_])\*\*(?![*_\s])(?P<body>.+?)(?<!\s)\*\*(?![*_])', masked):
-            if m['body'].strip() and not m['body'].startswith(('*', '_')):
-                found.append((offset + m.start(), offset + m.end(), line[m.start()+2:m.end()-2], 'bold'))
         check = re.match(r'^(\s*)([-*+]\s+)\[x\](\s+)(.*?)(\r?\n)?$', line, re.I)
-        if check and check[4].strip() and masked.strip():
+        if (check and check[4].strip() and masked.strip()
+                and not any(start <= offset + len(check[1]) < end for start, end, _, _ in found)):
             found.append((offset + len(check[1]), offset + len(line.rstrip('\r\n')), check[4], 'checklist'))
     return sorted(found)
 
@@ -897,7 +919,9 @@ class Watcher:
                 raise RuntimeError('Command crosses enclosing ticket boundary')
             pending = body
             if kind == 'bold':
-                replacement = '__' + pending + '__'
+                replacement = text[begin:finish]
+                for left, right, content, _ in reversed(bold_commands(replacement)):
+                    replacement = replacement[:left] + '__' + content + '__' + replacement[right:]
             else:
                 replacement = text[begin:finish]
                 replacement = re.sub(r'^(\s*[-*+]\s+)\[x\](\s+)', r'\1[ ]\2', replacement, count=1, flags=re.I)
@@ -1409,6 +1433,41 @@ class Tests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(RuntimeError):
                 boundaries(invalid)
 
+    def test_bold_paragraphs_one_activation(self):
+        selection = '**First with `**` here**\n\n**Second\nline**\n\n**Third**'
+        body = 'First with `**` here\n\nSecond\nline\n\nThird'
+        text = 'Before.\n' + selection + '\nAfter.\n'
+        commands = find_commands(text)
+        self.assertEqual(len(commands), 1)
+        start, end, prompt, kind = commands[0]
+        self.assertEqual(text[start:end], selection)
+        self.assertEqual(prompt, body)
+        def runner(prompt, activation, status):
+            context = json.loads(prompt.split('\n\n', 1)[1])
+            self.assertEqual(context['comment'], body)
+            self.assertIn('__First with `**` here__\n\n__Second\nline__\n\n__Third__', context['ticket'])
+            self.calls.append(dict(activation))
+            activation['session_id'] = 'test-session'
+            return 'Done.'
+        self.w.runner = runner
+        self.path.write_text(text)
+        self.assertTrue(self.run_ticket())
+        self.assertEqual(len(boundaries(self.path.read_text())), 1)
+        self.assertEqual(find_commands(self.path.read_text()), [])
+        self.assertTrue(self.path.read_text().startswith('Before.\n'))
+        self.assertTrue(self.path.read_text().endswith('\nAfter.\n'))
+        restarted = Watcher(self.root, settle=0, runner=runner)
+        restarted.scan()
+        restarted.scan()
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual([r['phase'] for r in self.h.records()], ['B', 'A'])
+        self.assertEqual(find_commands('**First\n\nSecond**')[0][2], 'First\n\nSecond')
+        self.assertEqual(find_commands('**First\n- [x] included\nSecond**')[0][3], 'bold')
+        for separator in ('\nPlain text.\n', '\n`code`\n', '\n%% comment %%\n',
+                          '\n```\ncode\n```\n', '\n#KOL-2🎬 text #KOL-2🛑\n', '\n__ordinary__\n'):
+            with self.subTest(separator=separator):
+                self.assertEqual(len(find_commands('**First**' + separator + '**Second**')), 2)
+
     def test_config(self):
         self.assertEqual(config(self.root)['nickname'], 'KOL')
         for text in ['`nickname` = kol\n`subagent` = codex', '`nickname` = KOL\n`nickname` = ABC\n`subagent` = codex',
@@ -1690,7 +1749,7 @@ class Tests(unittest.TestCase):
     def test_each_git_stage_failure_and_next_request(self):
         for stage in ['read-tree', 'ls-files', 'update-index', 'add', 'write-tree', 'commit-tree', 'update-ref']:
             with self.subTest(stage=stage):
-                self.path.write_text('**first**\n**second**')
+                self.path.write_text('**first**\nSeparate requests.\n**second**')
                 self.h.index.unlink(missing_ok=True)
                 original = self.h.run
                 def failed(*args, **kw):
