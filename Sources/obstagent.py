@@ -30,6 +30,18 @@ import uuid
 from unittest import mock
 
 INSTRUCTION = Path('Conventions/Agent Instruction.md')
+# Repeat the prose contract on every activation, including resume/fork sessions.
+EDITING_RULES = (
+    '*Preserve ordinary human text: do not delete or rewrite it, including inside the active ticket. '
+    'For requested Markdown prose edits outside the active ticket (including other notes), '
+    'propose removals only by wrapping the exact original in `~~...~~`; '
+    'propose additions or replacements as `*~~...~~*` alongside the preserved original. '
+    'Do not silently apply proposals or create another ticket. '
+    'Inside the active ticket, generated prose must be italic. '
+    'These proposal rules concern Markdown prose, not source code explicitly requested by the ticket. '
+    'Keep all edits within the selected scope; permission to expand scope does not by itself '
+    'waive text preservation or proposal formatting. Preserve concurrent edits.*'
+)
 EXCLUDED = {'.git', '.obsidian', '.codex', '.agents', '__pycache__'}
 RESTART_EXIT = 75
 RESTART_TEST_TIMEOUT = 60
@@ -44,6 +56,7 @@ RESTART_TESTS = (
     'test_user_head_and_index_bytes',
     'test_ignore_force_and_service_exclusion',
     'test_full_cycle_and_restart_no_duplicate',
+    'test_editing_rules_on_each_activation',
     'test_b_failure_recovery_only_saves',
     'test_unknown_a_does_not_execute',
     'test_multiline_result_and_recovery_without_result_marker',
@@ -928,7 +941,8 @@ class Watcher:
                 body_start = end - len(body) - begin
                 replacement = replacement[:body_start] + pending + replacement[body_start + len(body):]
             if not enclosing or nested:
-                replacement = f'#{ident}🎬 {replacement.rstrip()} #{ident}🛑'
+                separator = '\n' if kind == 'checklist' else ' '
+                replacement = f'#{ident}🎬{separator}{replacement.rstrip()} #{ident}🛑'
             activation = dict(ticket_id=ident, activation_id=str(uuid.uuid4()), note=str(path.relative_to(self.root)),
                               parent_ticket_id=ident.rsplit('/', 1)[0] if '/' in ident else None, session_id=session, outcome='pending', comment=body, stage='prepared')
             if fork_parent:
@@ -991,7 +1005,7 @@ class Watcher:
             context.update(ticket=current[start:finish], surrounding_text=current[:start] + '[[TICKET ' + activation['ticket_id'] + ']]' + current[finish:])
             activation['stage'] = 'running'
             self.save_journal(activation)
-            response = self.runner(instruction + '\n\n' + json.dumps(context, ensure_ascii=False), activation,
+            response = self.runner(instruction.rstrip() + '\n' + EDITING_RULES + '\n\n' + json.dumps(context, ensure_ascii=False), activation,
                                    lambda message: self.note_update(activation, '💭 ' + message))
             activation['outcome'] = 'success'
             activation['result'] = response or 'Запрос выполнен; текст ответа отсутствует.'
@@ -1170,6 +1184,33 @@ def self_test_suite(full=False):
 
 
 class Tests(unittest.TestCase):
+    def test_editing_rules_on_each_activation(self):
+        instruction = 'Vault instruction.\n\nSecond paragraph.'
+        (self.root / INSTRUCTION).write_text(instruction, encoding='utf-8')
+        prompts = []
+        original = self.w.runner
+        def runner(prompt, activation, status):
+            policy, payload = prompt.rsplit('\n\n', 1)
+            self.assertTrue(policy.startswith(instruction + '\n'))
+            self.assertIn('`~~...~~`', policy)
+            self.assertIn('`*~~...~~*`', policy)
+            self.assertIn('do not delete or rewrite', policy)
+            context = json.loads(payload)
+            self.assertEqual(context['ticket_id'], activation['ticket_id'])
+            self.assertEqual(context['snapshot_a'], activation['snapshot_a'])
+            self.assertNotIn('EDITING_RULES', context)
+            prompts.append(dict(activation))
+            return original(prompt, activation, status)
+        self.w.runner = runner
+        self.assertTrue(self.run_ticket())
+        self.path.write_text(self.path.read_text().replace('#KOL-1🛑', '**continue**\n#KOL-1🛑'))
+        self.assertTrue(self.run_ticket())
+        self.path.write_text(self.path.read_text().replace('Подробности.', '**child** after.', 1))
+        self.assertTrue(self.run_ticket())
+        self.assertIsNone(prompts[0]['session_id'])
+        self.assertEqual(prompts[1]['session_id'], 'test-session')
+        self.assertEqual(prompts[2]['fork_parent_session_id'], 'test-session')
+
     def test_inline_status_layout_and_recovery(self):
         self.path.write_text('Before **run** after.\n')
         def runner(prompt, activation, status):
@@ -1762,7 +1803,7 @@ class Tests(unittest.TestCase):
         self.path.write_text('- [x] parent\n  - child\n    detail\n- next\n')
         self.run_ticket()
         text = self.path.read_text()
-        self.assertIn('- [ ] parent\n  - child\n    detail', text)
+        self.assertIn('#KOL-1🎬\n- [ ] parent\n  - child\n    detail', text)
         self.assertTrue(text.endswith('- next\n'))
 
     def test_each_git_stage_failure_and_next_request(self):

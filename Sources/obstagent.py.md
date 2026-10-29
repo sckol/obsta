@@ -14,3 +14,6 @@ python3 Sources/obstagent.py --self-test
 *Параметры: `--vault`, `--interval`, `--settle`, `--timeout`, `--once`. Требуются Python 3.9+, Git и Codex с `exec --json`/`exec resume --json`. См. [[Запуск и перезапуск obstagent]] и [[Agent Instruction]].*
 
 *Финал исполнителя — JSON с `outcome` (`success`/`error`) и `response` (курсивный Markdown). 
+
+## Дополнительные требования
+Когда [[obstagent]] снимает пункт чек-листа после взятия задачи нужно проследить, что он начинается с новой строки (то есть конструкция `- [ ]` идет с новой строки). Иначе Obsidian не воспринимает его как пункт чек-листа.

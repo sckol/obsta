@@ -1,0 +1,6 @@
+filters:
+  and:
+    - file.inFolder("Glossary")
+views:
+  - type: table
+    name: представление
