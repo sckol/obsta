@@ -194,7 +194,7 @@ def italic(text, restore=False):
         body = prefix[2]
         if restore and body.startswith('*') and body.endswith('*'):
             body = body[1:-1]
-        prose = re.sub(r'`+[^`\n]*`+|\[[^]\n]+\]\([^\n)]*\)', protect, body)
+        prose = re.sub(r'`+[^`\n]*`+|!?\[\[[^\[\]\n]+\]\]|\[[^]\n]+\]\([^\n)]*\)', protect, body)
         if not restore:
             prose = re.sub(r'(?<![\\\w])(\*{1,3}|_{1,3})(\S(?:.*?\S)?)\1(?!\w)', r'\2', prose)
         parts = re.split(r'(\x00\d+\x00)', prose)
@@ -1300,6 +1300,25 @@ class Tests(unittest.TestCase):
         self.assertNotIn('&#', message)
         self.assertEqual(find_commands(message), [])
         self.assertIn('run', visible(message))
+
+    def test_status_preserves_obsidian_links(self):
+        links = (
+            '[[Agent Instruction]]',
+            '[[Conventions/Agent Instruction|Agent Instruction]]',
+            '[[Заметка#Раздел|Подпись]]',
+            '[[Заметка#^block-id]]',
+            '![[image_file.png|300]]',
+            '[Markdown](Conventions/Agent%20Instruction.md)',
+            '`[[literal_link]]`',
+        )
+        prose = 'См. ' + ', '.join(links) + ' — a_b, %% comment %%'
+        rendered = italic('◇ *' + prose + '*')
+        for link in links:
+            with self.subTest(link=link):
+                self.assertIn(link, rendered)
+        self.assertIn(r'a\_b', rendered)
+        self.assertIn(r'\%\% comment \%\%', rendered)
+        self.assertEqual(italic(rendered, restore=True), '◇ ' + prose)
 
     def test_final_status_without_request_decorations(self):
         for outcome, icon in [('success', '◇'), ('error', '❌')]:
