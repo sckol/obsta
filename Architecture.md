@@ -32,7 +32,7 @@ obsta - проект по созданию технической докумен
 - начать расписывать [[Принципы arc67]]
 - начать создавать систему шаблонов, чтобы агент вел себя по-разному в зависимости от того, в какой заметке поставлен тикет.
 ## Building Block View
-[[Sources/obstagent.py]] is a script that  contains code and tests for watcher that watches the directory on changes and detects signals from the text (e.g user applied bold formatting).
+[[Sources/obstagent.py]] is a script that  contains code and tests for [[obstagent]] that watches the directory on changes and detects signals from the text (e.g user applied bold formatting).
 ## Runtime View
 В [[001-mvp]] описан базовый сценарий, как пользователь взаимодействует с приложением.
 ## Deployment View
