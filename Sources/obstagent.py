@@ -48,8 +48,11 @@ RESTART_TEST_TIMEOUT = 60
 # Keep the restart gate bounded while retaining real Git, recovery and adapter checks.
 # Fault matrices and exhaustive CLI scenarios remain in --self-test-full.
 RESTART_TESTS = (
+    'test_references_excluded_from_observation',
     'test_signals_and_boundaries',
     'test_bold_paragraphs_one_activation',
+    'test_synced_notes_bidirectional',
+    'test_synced_notes_guards',
     'test_config',
     'test_local_config',
     'test_orphan_same_tree_and_lost_index',
@@ -493,7 +496,7 @@ def _lines(text):
     """Yield lines with offsets, excluding YAML frontmatter and fenced code."""
     offset = 0
     fence = None
-    frontmatter = text.startswith('---\n')
+    frontmatter = text.startswith(('---\n', '---\r\n'))
     for number, line in enumerate(text.splitlines(keepends=True)):
         stripped = line.lstrip()
         if frontmatter:
@@ -518,6 +521,7 @@ def _lines(text):
 def notes(root):
     for base, dirs, files in os.walk(root, followlinks=False):
         dirs[:] = sorted(d for d in dirs if d not in EXCLUDED and not d.startswith('.')
+                         and not (Path(base) == root and d == 'References')
                          and not (Path(base) / d).is_symlink())
         for name in sorted(files):
             path = Path(base) / name
@@ -572,12 +576,226 @@ def ticket_boundary(text, start, end, kind):
 
 
 
+
+class SyncedNotes:
+    """Literal, in-memory synchronization; never creates or deletes either side."""
+    NO_EOL = 'obsta-no-final-newline'
+
+    def __init__(self, root, settle=1.0):
+        self.root, self.settle = root.resolve(), settle
+        self.seen, self.cache, self.paths, self.diagnostics = {}, {}, {}, {}
+
+    @staticmethod
+    def scalar(value):
+        value = value.strip()
+        if value.startswith('"'):
+            value = json.loads(value)
+        elif value.startswith("'") and value.endswith("'"):
+            value = value[1:-1].replace("''", "'")
+        elif value and (value[0] in '[{&*!>|' or ' #' in value):
+            raise ValueError('Ambiguous frontmatter scalar')
+        if not isinstance(value, str) or '\n' in value or '\r' in value:
+            raise ValueError('Expected one frontmatter string')
+        return value
+
+    def target(self, note, text):
+        front = re.match(r'\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)', text, re.S)
+        if not front:
+            return None
+        templates = re.findall(r'^Template:[ \t]*(.*)$', front[1], re.M)
+        if not any('Synced note' in t for t in templates):
+            return None
+        if len(templates) != 1 or self.scalar(templates[0]) != 'Synced note':
+            raise ValueError('Ambiguous Template')
+        values = re.findall(r'^Path:[ \t]*(.*)$', front[1], re.M)
+        if len(values) != 1:
+            raise ValueError('Expected exactly one Path')
+        value = self.scalar(values[0])
+        if not value:
+            return None
+        raw = self.root / value.lstrip('/') if value.startswith('/') else note.parent / value
+        target = Path(os.path.abspath(raw))
+        if self.root not in target.parents or target == note:
+            raise ValueError('Path must point to another file inside the vault')
+        for part in (target, *target.parents):
+            if part == self.root:
+                break
+            if part.is_symlink():
+                raise ValueError('Symlink in Path')
+        if target.relative_to(self.root).parts[0] in {'.git', '.obsidian', '.codex', '.agents'}:
+            raise ValueError('Path points to service data')
+        if target.exists() and not target.is_file():
+            raise ValueError('Path is not a regular file')
+        return target
+
+    @classmethod
+    def block(cls, text):
+        # _lines excludes frontmatter and complete fences, including headings in code.
+        headings = []
+        for offset, line in _lines(text):
+            m = re.match(r'^(#{1,6})[ \t]+(.*?)[ \t]*\n?$', line)
+            if m:
+                headings.append((offset, len(m[1]), m[2].strip().strip('*_~ '), len(line)))
+        selected = [h for h in headings if h[2] == 'File content']
+        if not selected:
+            return None
+        if len(selected) != 1:
+            raise ValueError('Multiple File content sections')
+        offset, level, _, length = selected[0]
+        end = next((o for o, n, _, _ in headings if o > offset and n <= level), len(text))
+        section = text[offset + length:end]
+        blocks, opened = [], None
+        cursor = offset + length
+        for line in section.splitlines(keepends=True):
+            m = re.match(r'^ {0,3}(`{3,}|~{3,})([^\r\n]*)(\r?\n|$)', line)
+            if opened is None and m:
+                opened = (cursor, cursor + len(line), m[1], m[2], m[3])
+            elif opened and m and m[1][0] == opened[2][0] and len(m[1]) >= len(opened[2]) and not m[2].strip():
+                start, body, fence, info, eol = opened
+                content = text[body:cursor]
+                if cls.NO_EOL in info.split():
+                    if not content.endswith('\n'):
+                        raise ValueError('Broken final-newline marker')
+                    content = content[:-len(eol)] if content.endswith(eol) else content[:-1]
+                blocks.append((start, cursor + len(line), content, fence, info, eol, m[3]))
+                opened = None
+            cursor += len(line)
+        if opened or len(blocks) > 1:
+            raise ValueError('Damaged or ambiguous File content block')
+        return blocks[0] if blocks else None
+
+    @classmethod
+    def render(cls, block, content):
+        _, _, _, fence, info, eol, closing_eol = block
+        eol = eol or '\n'
+        info = ' '.join(word for word in info.split() if word != cls.NO_EOL)
+        if content and not content.endswith('\n'):
+            info += ' ' + cls.NO_EOL
+            content += eol
+        runs = re.findall(re.escape(fence[0]) + r'{3,}', content)
+        fence = fence[0] * max(len(fence), max((len(r) + 1 for r in runs), default=3))
+        return fence + info + eol + content + fence + closing_eol
+
+    @staticmethod
+    def read(path):
+        data = path.read_bytes()
+        return data, path.stat().st_mtime_ns
+
+    def bindings(self):
+        bindings = {}
+        for note in notes(self.root):
+            try:
+                data, mtime = self.read(note)
+                text = data.decode('utf-8')
+                target = self.target(note, text)
+                if target is not None:
+                    bindings.setdefault(target, []).append((note, data, mtime, text))
+            except (OSError, ValueError) as error:
+                self.report(note, error)
+        return bindings
+
+    def report(self, note, error):
+        message = str(error)
+        if self.diagnostics.get(note) != message:
+            logging.warning('Synced note %s: %s', note, message)
+            self.diagnostics[note] = message
+
+    def unchanged(self, note, note_version, target, file_version):
+        # Re-discover bindings as well: a newly added duplicate must also stop writes.
+        bindings = self.bindings().get(target, [])
+        return (len(bindings) == 1 and bindings[0][0] == note
+                and self.read(note) == note_version
+                and self.target(note, note_version[0].decode('utf-8')) == target
+                and self.read(target) == file_version)
+
+    def replace(self, destination, data, guard):
+        # A unique sibling preserves permissions and avoids following a replacement symlink.
+        mode = destination.stat().st_mode & 0o777
+        fd, name = tempfile.mkstemp(prefix='.obsta-sync-', dir=destination.parent)
+        try:
+            with os.fdopen(fd, 'wb') as output:
+                output.write(data)
+                os.fchmod(output.fileno(), mode)
+            if not guard():
+                return False
+            os.replace(name, destination)
+            return True
+        finally:
+            Path(name).unlink(missing_ok=True)
+
+    def scan(self):
+        now, changed = time.monotonic(), False
+        bindings = self.bindings()
+        live = {row[0] for rows in bindings.values() for row in rows}
+        for mapping in (self.cache, self.paths, self.seen):
+            for note in set(mapping) - live:
+                del mapping[note]
+        for target, rows in bindings.items():
+            if len(rows) != 1 or target in live:
+                for note, *_ in rows:
+                    self.report(note, 'Multiple notes for one file or a synced note used as Path')
+                continue
+            note, data, mtime, text = rows[0]
+            try:
+                previous_path = self.paths.get(note, target)
+                if previous_path != target:
+                    self.cache[note] = ('path-changed', None)
+                self.paths[note] = target
+                block = self.block(text)
+                if block is None:
+                    self.report(note, 'No code block in File content; use a File content heading from the Synced note template')
+                    continue
+                if not target.exists():
+                    continue
+                file_data, file_time = self.read(target)
+                file_text = file_data.decode('utf-8')
+                signature = (data, mtime, target, file_data, file_time)
+                old, since = self.seen.get(note, (None, now))
+                if old != signature:
+                    self.seen[note] = (signature, now)
+                    # Remember a changed Path while waiting for stability.
+                    if previous_path != target:
+                        self.cache[note] = ('path-changed', None)
+                    if self.settle:
+                        continue
+                elif now - since < self.settle:
+                    continue
+                content = block[2]
+                digest = hashlib.sha256(content.encode('utf-8')).digest()
+                cached = self.cache.get(note)
+                path_changed = previous_path != target or (cached and cached[0] == 'path-changed')
+                if content == file_text:
+                    self.cache[note] = (digest, file_data)
+                    continue
+                if cached and not path_changed and cached == (digest, file_data):
+                    continue  # Only explanations, tickets, or timestamps changed.
+                if path_changed or bool(content.strip()) != bool(file_text.strip()):
+                    to_file = bool(content.strip())
+                elif cached and cached[0] == digest:
+                    to_file = False
+                else:
+                    to_file = (bool(content.strip()), mtime) >= (bool(file_text.strip()), file_time)
+                guard = lambda: self.unchanged(note, (data, mtime), target, (file_data, file_time))
+                destination = target if to_file else note
+                replacement = (content.encode('utf-8') if to_file else
+                               (text[:block[0]] + self.render(block, file_text) + text[block[1]:]).encode('utf-8'))
+                if self.replace(destination, replacement, guard):
+                    resulting = content if to_file else file_text
+                    self.cache[note] = (hashlib.sha256(resulting.encode('utf-8')).digest(), resulting.encode('utf-8'))
+                    self.diagnostics.pop(note, None)
+                    changed = True
+            except (OSError, ValueError) as error:
+                self.report(note, error)
+        return changed
+
+
 class Watcher:
     def __init__(self, root, settle=1.0, timeout=1800, interval=0.5, runner=None):
         self.root = root.resolve()
         self.settle, self.timeout, self.interval = settle, timeout, interval
         self.runner = runner or self.execute
         self.seen, self.cooldown = {}, {}
+        self.synced_notes = SyncedNotes(self.root, settle)
         self.history = History(self.root)
         if Path(git(self.root, 'rev-parse', '--show-toplevel').strip()).resolve() != self.root:
             raise RuntimeError('Vault must be the Git repository root')
@@ -861,7 +1079,7 @@ class Watcher:
                 self.cooldown[key] = now + 30
                 self.run_activation(activation)
                 break
-        did_work = False
+        did_work = self.synced_notes.scan()
         for path in notes(self.root):
             try:
                 text = path.read_text(encoding='utf-8')
@@ -942,7 +1160,8 @@ class Watcher:
                 replacement = replacement[:body_start] + pending + replacement[body_start + len(body):]
             if not enclosing or nested:
                 separator = '\n' if kind == 'checklist' else ' '
-                replacement = f'#{ident}🎬{separator}{replacement.rstrip()} #{ident}🛑'
+                trailing = replacement[len(replacement.rstrip()):] if kind == 'checklist' else ''
+                replacement = f'#{ident}🎬{separator}{replacement.rstrip()} #{ident}🛑' + trailing
             activation = dict(ticket_id=ident, activation_id=str(uuid.uuid4()), note=str(path.relative_to(self.root)),
                               parent_ticket_id=ident.rsplit('/', 1)[0] if '/' in ident else None, session_id=session, outcome='pending', comment=body, stage='prepared')
             if fork_parent:
@@ -1184,6 +1403,205 @@ def self_test_suite(full=False):
 
 
 class Tests(unittest.TestCase):
+    def synced_fixture(self, content='note\n', file_content='file\n', path='/.config'):
+        note = self.root / 'Configs/sync.md'
+        note.write_text('---\nTemplate: Synced note\nPath: ' + path +
+                        '\n---\nHuman explanation.\n## *File content*\n````text\n' +
+                        content + '````\n## Discussion\nHuman discussion.\n', encoding='utf-8')
+        target = self.root / '.config'
+        target.write_bytes(file_content.encode('utf-8'))
+        os.utime(note, ns=(2000000000, 2000000000))
+        os.utime(target, ns=(1000000000, 1000000000))
+        return note, target, SyncedNotes(self.root, settle=0)
+
+    def test_synced_notes_bidirectional(self):
+        note, target, sync = self.synced_fixture()
+        self.assertTrue(sync.scan())
+        self.assertEqual(target.read_bytes(), b'note\n')
+        self.assertFalse(sync.scan())
+        target.write_bytes(b'changed\r\n')
+        before = note.read_bytes()
+        self.assertTrue(sync.scan())
+        self.assertEqual(note.read_bytes(), before.replace(b'\nnote\n````', b'\nchanged\r\n````'))
+        self.assertEqual(target.read_bytes(), b'changed\r\n')
+        # Editing prose later must not reverse a concurrent external change.
+        target.write_bytes(b'external\n')
+        note.write_bytes(note.read_bytes().replace(b'Human explanation.', b'Human changed explanation.'))
+        self.assertTrue(sync.scan())
+        self.assertEqual(sync.block(note.read_bytes().decode())[2], 'external\n')
+        mtime = target.stat().st_mtime_ns
+        note.write_bytes(note.read_bytes().replace(b'Human discussion.', b'Another discussion.'))
+        self.assertFalse(sync.scan())
+        self.assertEqual(target.stat().st_mtime_ns, mtime)
+        note.write_bytes(note.read_bytes().replace(b'external\n', b'from note\n'))
+        self.assertTrue(sync.scan())
+        self.assertEqual(target.read_bytes(), b'from note\n')
+
+    def test_synced_notes_gitignore_section_diagnostic(self):
+        note, target, sync = self.synced_fixture(content='# keep user rule\n',
+                                                file_content='# previous rules\n', path='/.gitignore')
+        target.rename(self.root / '.gitignore')
+        target = self.root / '.gitignore'
+        original = note.read_text().replace('## *File content*', '## *~~Конфигурация~~*')
+        note.write_text(original)
+        with self.assertLogs(level='WARNING') as messages:
+            self.assertFalse(sync.scan())
+        self.assertIn('File content', '\n'.join(messages.output))
+        self.assertEqual(target.read_text(), '# previous rules\n')
+        self.assertEqual(note.read_text(), original)
+        # Preserve the existing heading and prose; insert only the proposed heading.
+        repaired = original.replace('````text', '## *~~File content~~*\n````text', 1)
+        note.write_text(repaired)
+        self.assertTrue(sync.scan())
+        self.assertEqual(target.read_text(), '# keep user rule\n')
+        self.assertEqual(note.read_text(), repaired)
+        target.write_text('# external rule\n')
+        self.assertTrue(sync.scan())
+        self.assertEqual(note.read_text(), repaired.replace('# keep user rule\n', '# external rule\n'))
+
+    def test_synced_notes_priority_and_restart(self):
+        for content, file_content, note_time, file_time, expected in (
+                ('note\n', 'file\n', 1, 1, 'note\n'),
+                ('note\n', 'file\n', 1, 2, 'file\n'),
+                (' \n', 'file\n', 2, 1, 'file\n'),
+                ('note\n', '\t\n', 1, 2, 'note\n')):
+            with self.subTest(content=content, file=file_content, note_time=note_time):
+                note, target, sync = self.synced_fixture(content, file_content)
+                os.utime(note, ns=(note_time, note_time))
+                os.utime(target, ns=(file_time, file_time))
+                self.assertTrue(sync.scan())
+                self.assertEqual(target.read_bytes(), expected.encode())
+                self.assertEqual(sync.block(note.read_bytes().decode())[2], expected)
+                self.assertFalse(SyncedNotes(self.root, settle=0).scan())
+
+    def test_synced_notes_literal_fences_and_eol(self):
+        note, target, sync = self.synced_fixture('', '---\r\nkey: value\r\n---\r\n````\r\nno final newline')
+        before = note.read_bytes()
+        self.assertTrue(sync.scan())
+        after = note.read_bytes()
+        self.assertIn(b'`````text obsta-no-final-newline', after)
+        self.assertEqual(sync.block(after.decode())[2].encode(), target.read_bytes())
+        self.assertEqual(after.split(b'## *File content*')[0], before.split(b'## *File content*')[0])
+        self.assertTrue(after.endswith(b'## Discussion\nHuman discussion.\n'))
+        self.assertFalse(SyncedNotes(self.root, settle=0).scan())
+        # CRLF in the note itself is preserved, including text outside the block.
+        note.write_bytes(before.replace(b'\n', b'\r\n'))
+        self.assertTrue(SyncedNotes(self.root, settle=0).scan())
+        self.assertTrue(note.read_bytes().endswith(b'Human discussion.\r\n'))
+        self.assertEqual(sync.block(note.read_bytes().decode())[2].encode(), target.read_bytes())
+
+    def test_synced_notes_missing_and_path_change(self):
+        note, target, sync = self.synced_fixture(path='../.config')
+        sync.scan()
+        target.unlink()
+        before = note.read_bytes()
+        self.assertFalse(sync.scan())
+        self.assertFalse(target.exists())
+        self.assertEqual(note.read_bytes(), before)
+        other = self.root / 'other.toml'
+        other.write_text('new target\n')
+        note.write_bytes(before.replace(b'../.config', b'/other.toml'))
+        os.utime(note, ns=(1, 1))
+        self.assertTrue(sync.scan())
+        self.assertEqual(other.read_text(), 'note\n')
+        self.assertFalse(target.exists())
+        # Empty blocks import the newly selected target, even if older.
+        target.write_text('original file\n')
+        note.write_bytes(note.read_bytes().replace(b'/other.toml', b'/.config').replace(b'\nnote\n````', b'\n````'))
+        os.utime(target, ns=(1, 1))
+        self.assertTrue(sync.scan())
+        self.assertEqual(sync.block(note.read_text())[2], 'original file\n')
+        self.assertEqual(other.read_text(), 'note\n')
+        note.write_text(note.read_text().replace('## *File content*', '## Other section'))
+        before = target.read_bytes()
+        self.assertFalse(sync.scan())
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_synced_notes_guards(self):
+        note, target, sync = self.synced_fixture()
+        before = target.read_bytes()
+        duplicate = self.root / 'duplicate.md'
+        duplicate.write_bytes(note.read_bytes())
+        with self.assertLogs(level='WARNING'):
+            self.assertFalse(sync.scan())
+        self.assertEqual(target.read_bytes(), before)
+        duplicate.unlink()
+        original = sync.replace
+        def concurrent(destination, data, guard):
+            note.write_bytes(note.read_bytes().replace(b'/.config', b'/elsewhere.toml'))
+            return original(destination, data, guard)
+        with mock.patch.object(sync, 'replace', side_effect=concurrent):
+            self.assertFalse(sync.scan())
+        self.assertEqual(target.read_bytes(), before)
+        self.assertFalse((self.root / 'elsewhere.toml').exists())
+        note, target, sync = self.synced_fixture()
+        def external(destination, data, guard):
+            target.write_bytes(b'concurrent file\n')
+            return original(destination, data, guard)
+        with mock.patch.object(sync, 'replace', side_effect=external):
+            self.assertFalse(sync.scan())
+        self.assertEqual(target.read_bytes(), b'concurrent file\n')
+        self.assertFalse(list(self.root.glob('.obsta-sync-*')))
+
+    def test_synced_notes_reject_invalid(self):
+        note, target, sync = self.synced_fixture()
+        original = note.read_bytes()
+        for bad in (
+                original.replace(b'Path: /.config', b'Path: /.config\nPath: /other'),
+                original.replace(b'Path: /.config', b'Path: [/.config, /other]'),
+                original.replace(b'Path: /.config', b'Path: ../../outside'),
+                original.replace(b'Path: /.config', b'Path: /.git/config'),
+                original.replace(b'````\n## Discussion', b'```\n## Discussion'),
+                original.replace(b'## Discussion', b'```text\nsecond\n```\n## Discussion')):
+            with self.subTest(bad=bad):
+                note.write_bytes(bad)
+                sync.diagnostics.clear()
+                with self.assertLogs(level='WARNING'):
+                    self.assertFalse(sync.scan())
+                self.assertEqual(target.read_bytes(), b'file\n')
+        note.write_bytes(original)
+        target.unlink()
+        target.symlink_to(self.root / 'task.md')
+        with self.assertLogs(level='WARNING'):
+            self.assertFalse(sync.scan())
+        self.assertEqual(self.path.read_text(), '**run**\nOutside.\n')
+
+    def test_synced_notes_settle_and_watcher(self):
+        note, target, sync = self.synced_fixture()
+        self.path.write_text('No activation.')
+        sync.settle = 1
+        with mock.patch.object(time, 'monotonic', return_value=10):
+            self.assertFalse(sync.scan())
+        with mock.patch.object(time, 'monotonic', return_value=10.5):
+            self.assertFalse(sync.scan())
+        with mock.patch.object(time, 'monotonic', return_value=11):
+            self.assertTrue(sync.scan())
+        target.write_text('from file\n')
+        self.assertTrue(self.w.scan())
+        self.assertEqual(sync.block(note.read_text())[2], 'from file\n')
+        self.assertEqual(self.calls, [])
+
+    def test_synced_notes_create_checklist_cycle(self):
+        note, target, sync = self.synced_fixture('', '')
+        target.unlink()
+        note.write_text(note.read_text().replace('Human explanation.',
+                        '- [x] Create the file by path if not exists'))
+        self.path.write_text('No activation.')
+        # The existing executor owns explicit creation; automatic sync resumes afterward.
+        def create(prompt, activation, status):
+            self.assertTrue(self.h.records()[0]['phase'] == 'A')
+            self.assertIn('Create the file by path', activation['comment'])
+            target.write_text('created = true\n')
+            activation['session_id'] = 'creation-session'
+            return 'Created.'
+        self.w.runner = create
+        self.w.scan()
+        self.assertTrue(self.w.scan())
+        self.assertEqual([r['phase'] for r in self.h.records()], ['B', 'A'])
+        self.w.scan()
+        self.assertEqual(sync.block(note.read_text())[2], 'created = true\n')
+        self.assertIn('- [ ] Create the file by path', note.read_text())
+
     def test_editing_rules_on_each_activation(self):
         instruction = 'Vault instruction.\n\nSecond paragraph.'
         (self.root / INSTRUCTION).write_text(instruction, encoding='utf-8')
@@ -1473,6 +1891,28 @@ class Tests(unittest.TestCase):
 
     def tree_files(self):
         return set(git(self.root, 'ls-tree', '-rz', '--name-only', REF, binary=True).split(b'\0')) - {b''}
+
+    def test_references_excluded_from_observation(self):
+        originals = {}
+        for relative in ('References/import.md', 'References/nested/import.md'):
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            originals[path] = '**Imported bold**\n- [x] Imported checklist\n'
+            path.write_text(originals[path], encoding='utf-8')
+        # Only the root References directory is excluded, not similarly named notes.
+        for relative in ('References.md', 'References-other/note.md', 'Docs/References/note.md'):
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('Ordinary note\n', encoding='utf-8')
+            self.assertIn(path, list(notes(self.root)))
+        self.assertTrue(set(originals).isdisjoint(notes(self.root)))
+        self.w.scan()
+        self.w.scan()
+        self.assertEqual([call['note'] for call in self.calls], ['task.md'])
+        for path, original in originals.items():
+            self.assertEqual(path.read_text(encoding='utf-8'), original)
+            self.assertNotIn(path, self.w.seen)
+        self.assertEqual([row['phase'] for row in self.h.records()], ['B', 'A'])
 
     def test_signals_and_boundaries(self):
         text = '---\nx: **no**\n---\n```\n#X-1🎬 **no**\n```\n`**no**` **yes**\n- [x] run\n'

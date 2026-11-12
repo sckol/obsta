@@ -32,7 +32,7 @@ obsta - проект по созданию технической докумен
 
 *Актуальных планов сейчас нет.*
 ## Building Block View
-[[Sources/obstagent.py]] is a script that  contains code and tests for [[obstagent]] that watches the directory on changes and detects signals from the text (e.g user applied bold formatting).
+[[Sources/obstagent.py]] is a script that  contains code and tests for [[Glossary/obstagent]] that watches the directory on changes and detects signals from the text (e.g user applied bold formatting).
 ## Runtime View
 В [[001-mvp]] описан базовый сценарий, как пользователь взаимодействует с приложением.
 ## Deployment View

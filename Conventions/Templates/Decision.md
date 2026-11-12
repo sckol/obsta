@@ -1,6 +1,9 @@
 ---
 Template: Decision
+Status: In progress, Done, Rejected
 ---
+## Problem
+Describe the problem or question that requires a decision, why it matters, and the constraints or criteria the solution must satisfy.
 ## Discussion
 Compare the options, their benefits and drawbacks. Keep the reasoning and open questions here; put just `-` if no discussion is needed.
 ## Decision
