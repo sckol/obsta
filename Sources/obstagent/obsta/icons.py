@@ -7,7 +7,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 
-from .assets import DATA, read_json, replace, update_json
+from .assets import DATA, checked_folder, read_json, replace, update_json
 
 DEFAULT_ICONS = tuple(json.loads((DATA / 'obsta-icons.json').read_text(encoding='utf-8')))
 STATE_NAME = 'obsta-icon-state.json'
@@ -31,6 +31,24 @@ def palette(root):
 
 def state_path(root, workspace):
     return (workspace if workspace is not None else root / '.obsidian') / STATE_NAME
+
+
+def install_plugin(root, workspace):
+    if sys.platform != 'darwin':
+        return
+    try:
+        folder = checked_folder(root, '.obsidian/plugins/obsta-dock-icon')
+        for name, source in (('manifest.json', 'dock-plugin.json'), ('main.js', 'dock-plugin.js')):
+            data = (DATA / source).read_bytes()
+            target = folder / name
+            if target.is_symlink() or not target.is_file() or target.read_bytes() != data:
+                replace(target, data)
+        config = folder / 'data.json'
+        settings = {'statePath': str(state_path(root, workspace))}
+        if read_json(config) != settings:
+            update_json(config, settings)
+    except (OSError, ValueError, RuntimeError) as error:
+        logging.warning('Could not install the Obsidian Dock plugin in %s: %s', root, error)
 
 
 def advance(root, workspace, activation_id):

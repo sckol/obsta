@@ -78,6 +78,7 @@ def add(home, root):
         common = git_common(root)
         if root in roots:
             assets.install_templates(root)
+            icons.install_plugin(root, home)
             return
         for other in roots:
             try:
@@ -87,6 +88,7 @@ def add(home, root):
             if common == other_common:
                 raise ValueError(f'Vault shares a Git repository with {other}: {root}')
         assets.install_templates(root)
+        icons.install_plugin(root, home)
         config = home / 'config.toml'
         # A separate TOML table per path lets registration preserve comments and defaults.
         key = hashlib.sha256(os.fsencode(root)).hexdigest()
@@ -161,6 +163,7 @@ class Supervisor:
                     if common in commons:
                         raise ValueError(f'Another vault uses the same Git repository: {root}')
                     assets.install_templates(root)
+                    icons.install_plugin(root, self.home)
                     command = [*python_command(), str(MODULE / 'worker.py'), '--vault', str(root),
                                '--workspace', str(self.home), *self.options]
                     self.workers[root] = subprocess.Popen(command, cwd=self.home, start_new_session=True)

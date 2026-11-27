@@ -98,5 +98,15 @@ __Иконка все еще старая у obsidian. Также я внес в
 
 *Изменения — [[Sources/obstagent/obsta/worker.py]] хранит счётчики и сессии в снимках Git и резервирует ID перед публикацией, [[Sources/obstagent/obsta/icons.py]] заранее готовит PNG, [[Conventions/Использование Git]] описывает миграцию и порядок записи.*
 
-Так помен
+__Так поменяй иконку наконец__
+
+*◇ Поставил 🍎 как иконку Obsidian и заново открыл приложение. После запуска проверил, что штатная настройка указывает на новый PNG размером 256 × 256.*
+
+*Обновлены очередь [[.obsidian/obsta-icon-state.json]], локальная настройка Obsidian `obsidian.json`, изображение `obsta-app-icon.png` и журнал восстановления прежней иконки `obsta-app-icon.json`.* __obsidian перезапустился, так будет после каждой задачи?__ *◇ Нет. Я перезапустил Obsidian один раз, чтобы сразу применить 🍎. После каждого тикета obsta обновляет файл иконки в фоне. Новый фрукт появится в Dock при следующем обычном запуске Obsidian.* __Так можно же менять иконку без перезагрузки менять, сделай__
+
+*◇ Включил obsta Dock Icon в этом хранилище. Теперь после завершения тикета значок меняется прямо в открытом Obsidian. Проверил смену 🍋 на 🍓 и возврат прежнего значка при сбросе. Obsidian всё время работал в одном процессе. Сейчас в Dock 🍓.*
+
+*Добавлены плагин и его манифест — [[Sources/obstagent/obsta/data/dock-plugin.js]], [[Sources/obstagent/obsta/data/dock-plugin.json]]. Установка подключена в [[Sources/obstagent/obsta/icons.py]], [[Sources/obstagent/obsta/cli.py]] и [[Sources/obstagent/obsta/worker.py]]. Обновлён [[Scenarios/005-change-icon]].*
+
+*В текущем хранилище установлены [[.obsidian/plugins/obsta-dock-icon/main.js]], [[.obsidian/plugins/obsta-dock-icon/manifest.json]] и [[.obsidian/plugins/obsta-dock-icon/data.json]]. Плагин включён в [[.obsidian/community-plugins.json]], текущий фрукт записан в [[.obsidian/obsta-icon-state.json]].*
 #KOL-112🛑

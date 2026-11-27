@@ -1847,6 +1847,7 @@ def main(argv=None):
             watcher = Watcher(root, args.settle, args.timeout, args.interval, workspace=args.workspace)
             app_icon = icons.native_icon(root, None) if args.workspace is None and not args.once else None
             if app_icon:
+                icons.install_plugin(root, None)
                 cleanup.callback(app_icon.close)
             elif args.workspace is None and args.once and sys.platform == 'darwin':
                 cleanup.callback(icons.state_path(root, None).unlink, missing_ok=True)

@@ -1,0 +1,9 @@
+{
+  "id": "obsta-dock-icon",
+  "name": "obsta Dock Icon",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Shows the latest obsta ticket completion in the macOS Dock.",
+  "author": "obsta",
+  "isDesktopOnly": true
+}
