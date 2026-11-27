@@ -1,0 +1,22 @@
+diff --git a/skills/brainstorming/SKILL.md b/skills/brainstorming/SKILL.md
+--- a/skills/brainstorming/SKILL.md
++++ b/skills/brainstorming/SKILL.md
+@@ -11,3 +11,5 @@
+ *Record the agreed result, relevant note links, affected block and boundaries, proposed acceptance observations, and open questions in the selected ticket. Preserve the user's wording and prior discussion. If the user wants discussion only, stop at the recorded result.*
+
+ *With agreed requirements, activate [writing plans](../writing-plans/SKILL.md) only when the user requested planning or authorized a transition that includes it. Planning owns the Specification and plan. Discussion creates no standalone design document and performs no implementation.*
++
++*Pass the routed decision and your precise `question` or `discussion` summary to the [planning helper](../using-theseus/scripts/planning.py). Use its response in the selected ticket. On a later activation with agreed requirements, interpret the request again and route it with `requirements_ready` set to true.*
+diff --git a/skills/writing-plans/SKILL.md b/skills/writing-plans/SKILL.md
+--- a/skills/writing-plans/SKILL.md
++++ b/skills/writing-plans/SKILL.md
+@@ -19,3 +19,9 @@
+ ## *Hand off*
+
+ *Report the Specification and plan paths, expected checks, dependencies and any unresolved decisions. Await an execution request unless the user already authorized the transition. For that transition, verify the finished plan and then give the orchestrator the validated brief. The orchestrator checks scope, follows the tasks in order and records tests and review before return.*
++
++*Run the [planning helper](../using-theseus/scripts/planning.py) with one JSON object on stdin. Set `root` to the main vault for First implementation or Modification, or to the verified prepared worktree for Refactoring or a dependent Bug fix. Pass `decision` from the router, selected `ticket` text, `plan_path` for a new plan, exact implementation `files`, and `sections` mapping exact note paths to arrays of heading paths. For example, a heading path is `["Specification", "Acceptance"]`. Pass the effective role `settings` and relevant `context`. The helper requests a read-only planner proposal and checks and writes the resulting documents.*
++
++*Use the returned `response` in the current ticket. A Ready plan remains ready until execution starts. A returned `execute` stage includes validated `tasks` to give to the orchestrator. On a later explicit execution request, route using the plan's internal Ready status, then invoke the helper with the same exact authorized implementation paths to validate its current task table. The frontmatter Status remains user-owned.*
++
++*For a routed local change, supply the exact authorized `files` and `local_verification`. Record the returned scope and check in the ticket, perform the authorized change in the vault and report the actual verification result in the same ticket.*

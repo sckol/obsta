@@ -1,0 +1,1 @@
+С Codex периодически случаются проблемы, нужен restart with exponential backoff and jitter

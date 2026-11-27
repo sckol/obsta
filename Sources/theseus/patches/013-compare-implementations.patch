@@ -1,0 +1,27 @@
+diff --git a/skills/compare-implementations/SKILL.md b/skills/compare-implementations/SKILL.md
+new file mode 100644
+--- /dev/null
++++ b/skills/compare-implementations/SKILL.md
+@@ -0,0 +1,13 @@
++---
++name: compare-implementations
++description: Compare the old and accepted refactoring revisions against frozen obligations and ask the user which revision to keep.
++---
++
++# *Compare implementations*
++
++*After implementation, review and final verification, use [evaluation.py](../using-theseus/scripts/evaluation.py) with Python 3 and a JSON object on stdin. Every request has `action`, `case` and `arguments`. The case supplies `vault`, `ticket_id`, `slug`, `block`, `plan`, effective role `settings` and `attempt` when applicable.*
++
++1. *Before the evaluator reads either implementation, use `prepare`. Supply full `accepted_head`, the refactoring `goal`, `obligations` with stable `id`, `source` and `behavior`, and disjoint `code` and `tests` file inventories covering both revisions. Derive obligations from User requirements, the ticket, scenarios and contracts, including relevant descendants. Specify optional per-check `timeout` in seconds.*
++2. *Supply `checks` with stable `id`, `argv`, optional relative `cwd`, optional exact `stdin` and `kind`. Each `common` check names its affected `obligation`. Cover obligatory normal, error and compatibility behavior. Use `acceptance` for tests of each design. Set optional `for_revision` to the relevant full revision ID when the check’s result applies to only one side. Use `typical_change` for a representative maintenance task that lets the evaluator compare edit locations, dependencies, settings and ease of verification. Declare the exit codes proving a behavioral failure in `failure_exits` (default `[1]`). Use a distinct exit for missing prerequisites.*
++3. *Use `evaluate` with `basis_id` from preparation. The helper creates isolated copies of the pinned Git revisions and uses identical arguments, input and environment for each pair. It records the evidence, separate code and test volume and the independent assessor's findings in the ticket’s experiments directory. If a recorded deciding observation is disputed, provide `dispute` with its `revision`, `explanation` and `check`. A fresh assessor repeats and reviews that observation.*
++4. *Report the concise `response` and the report path in the selected ticket. Await the user's exact reply. Use `select` with `reply` from the user to record the selected revision. Immediately before starting the matched handoff, call `validate_choice` with the `report_id` and its exact `action`. The old choice authorizes `discard_new` and the new choice authorizes `return_new` after checking the successful final verification receipt for that revision. If stale, repeat the comparison and obtain a fresh choice. Then use the [finishing skill](../finishing-a-development-branch/SKILL.md) during that activation.*
+diff --git a/skills/verification-before-completion/SKILL.md b/skills/verification-before-completion/SKILL.md
+--- a/skills/verification-before-completion/SKILL.md
++++ b/skills/verification-before-completion/SKILL.md
+@@ -21,3 +21,5 @@
+ *Keep the verification report or output alongside the worktree. On a blocked result report it in the ticket or an authorized experiment artifact. Leave the blocked checkout unchanged apart from the scoped repair commit so direct ancestry stays verifiable. For publication the verified receipt uses `report_updates` to prepare Files and Problems in Working context and Final verification and Interruption and next step in the plan. Report unrun checks as pending. Leave the verified checkout unchanged while returning its diff.*
+
++*For a verified refactoring, continue with [compare implementations](../compare-implementations/SKILL.md) and obtain the user's choice before the handoff. For other verified development, use the [finishing skill](../finishing-a-development-branch/SKILL.md) during the same activation.*
++
+ ## The Iron Law

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "obsta"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Obsidian vault watcher for obsta tickets"
+
+[project.scripts]
+obsta = "obsta.cli:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["obsta"]
+
+[tool.setuptools.package-data]
+obsta = ["obstagent.sh", "data/*", "data/templates/*.md", "data/arc67init/SKILL.md"]

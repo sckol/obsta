@@ -1,0 +1,20 @@
+diff --git a/skills/verification-before-completion/SKILL.md b/skills/verification-before-completion/SKILL.md
+--- a/skills/verification-before-completion/SKILL.md
++++ b/skills/verification-before-completion/SKILL.md
+@@ -11,6 +11,16 @@
+
+ **Violating the letter of this rule is violating the spirit of this rule.**
+
++## *Final verification in a Theseus worktree*
++
++*Use [verification.py](../using-theseus/scripts/verification.py) with Python 3 and a JSON object on stdin. Supply the main `vault`, `ticket_id`, `slug`, `attempt` when applicable, selected `block` note, exact `plan` path, `work` type, full `accepted_head`, role `settings` and `checks`. Take the revision from accepted plan execution. The helper verifies all plan acceptance commits and requires their approved commands in the final manifest. Supply exact note paths as keys in `checks`. For each applicable block, list its `acceptance`, `tests` and `mandatory` checks from the approved contracts and plan. Each item has an exact shell `command` and worktree-relative `cwd`. An empty tests or mandatory list means the approved block has no checks of that kind. Include affected descendants and any unchanged descendants whose behavior needs verification.*
++
++*The helper runs the listed commands, records command, cwd, exit, output and revision, and sends the observed evidence and full diff to a fresh independent reviewer. It keeps the next action in the worktree's Git journal. On a failed check resume with the same inputs after correcting the cause. A change to checked inputs requires new evidence. Only a verified result for the current accepted revision and check set permits the next completion stage.*
++
++*On a blocking final review keep the exact blocked revision and findings. Dispatch a coder to fix them in the same worktree, within the exact implementation and test paths already approved by the plan. The coder commits the fix as a single direct child of the blocked revision. Call verification again with the new full revision as `accepted_head` and the blocked one as `repair_of`. Verification checks the repair scope and parent, reruns all required checks and requests a fresh final review with the prior findings. After interruption repeat that request. If a required check actually fails on a recorded repair, a further scoped commit can use that failed revision as `repair_of`. If the fix requires paths outside the approved plan, update the plan with the user before proceeding.*
++
++*Keep the verification report or output alongside the worktree. On a blocked result report it in the ticket or an authorized experiment artifact. Leave the blocked checkout unchanged apart from the scoped repair commit so direct ancestry stays verifiable. For publication the verified receipt uses `report_updates` to prepare Files and Problems in Working context and Final verification and Interruption and next step in the plan. Report unrun checks as pending. Leave the verified checkout unchanged while returning its diff.*
++
+ ## The Iron Law
+
+ ```

@@ -1,0 +1,15 @@
+diff --git a/skills/test-driven-development/SKILL.md b/skills/test-driven-development/SKILL.md
+--- a/skills/test-driven-development/SKILL.md
++++ b/skills/test-driven-development/SKILL.md
+@@ -4,5 +4,11 @@
+ ---
+
+ # Test-Driven Development (TDD)
++
++## *Theseus coder scope and evidence*
++
++*Read the task-specific brief and use only its exact implementation and test paths. Keep Specification and Working context for their assigned roles. Use the Glossary's canonical terms and spelling.*
++
++*Run at least one planned command before changing production code. Confirm that it fails for the expected missing behavior. Run every planned check after the minimum implementation and again after any refactor. Record each check's exact command, working directory, exit code and observed result in the evidence for the single task commit. Use the plan’s command syntax and complete any declared setup within scope. Follow the [Theseus task workflow](../subagent-driven-development/SKILL.md) for dispatch and acceptance.*
+
+ ## Overview

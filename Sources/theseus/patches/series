@@ -1,0 +1,15 @@
+# Bundle-relative Git patches, one filename per line in application order.
+001-using-theseus.patch
+002-brainstorming.patch
+003-writing-plans.patch
+004-codex-role-briefs.patch
+005-planning.patch
+006-worktree.patch
+007-subagent-driven-development.patch
+008-test-driven-development.patch
+009-code-review.patch
+010-systematic-debugging.patch
+011-verification-before-completion.patch
+012-refactoring.patch
+013-compare-implementations.patch
+014-finishing-a-development-branch.patch

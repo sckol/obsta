@@ -1,0 +1,729 @@
+diff --git a/skills/using-theseus/references/codex-tools.md b/skills/using-theseus/references/codex-tools.md
+--- a/skills/using-theseus/references/codex-tools.md
++++ b/skills/using-theseus/references/codex-tools.md
+@@ -15,3 +15,19 @@
+ | *`refactor_confirmed`, `refactor_workspace_ready`* | *Set true only after explicit user confirmation of the requested refactor and cleanup, and verification of the isolated prepared worktree, respectively.* |
+
+ *Omit unknown evidence. Follow a `question` with a concise question in the selected ticket. Report input validation failures before proceeding. Record evidence for the stage choice and confirm write scope independently of the router.*
++
++
++## *Launch a role*
++
++*Run `python3 <absolute-installed-using-theseus>/scripts/codex.py` with one JSON object on stdin. The adapter starts a fresh Codex exec process with the selected model, reasoning effort and cwd. Native `spawn_agent` accepts separate context and model settings but its tool signature has no cwd argument. Pass the selected role's brief only. Read and validate the actual changes and evidence before accepting the result.*
++
++| *Input field* | *Value* |
++| --- | --- |
++| *`role`* | *`planner`, `orchestrator`, `coder_light`, `coder`, `coder_heavy`, `reviewer` or `evaluator`. Use the planner's `coder_light` or `coder` assignment. Use `coder_heavy` when the orchestrator has decided to escalate.* |
++| *`settings`* | *Effective obstagent settings using flat `theseus.<role>` keys and `model/effort` values. The selected role's setting is required.* |
++| *`cwd`* | *Absolute path to the caller-verified working directory. The directory may be outside Git.* |
++| *`task`, `context`* | *Selected task as nonempty text and relevant context as text. Supply the requirements, applicable decisions and evidence needed by this role.* |
++| *`allowed_paths`, `allowed_sections`* | *Array of writable paths and a separate object mapping note paths to arrays of writable section headings. Paths are relative to cwd. Use empty values where the role has no write permission. Apply the scope to the actual diff separately.* |
++| *`checks`, `timeout`* | *Array of mandatory check commands. Optional timeout in seconds. The default is 1800.* |
++
++*Read a JSON result containing `outcome` and a nonempty `response`. Exit 0 means the role reported success. Exit 1 means the role reported error. Exit 2 means the adapter rejected the request or the process failed to complete with a valid result. For a blocked task, the response includes the concrete blocker and any necessary question.*
+diff --git a/skills/subagent-driven-development/implementer-prompt.md b/skills/subagent-driven-development/implementer-prompt.md
+--- a/skills/subagent-driven-development/implementer-prompt.md
++++ b/skills/subagent-driven-development/implementer-prompt.md
+@@ -1,154 +1,7 @@
+-# Implementer Subagent Prompt Template
++# *Implement a Theseus task*
+
+-Use this template when dispatching an implementer subagent.
++*Use the [Codex role adapter](../using-theseus/references/codex-tools.md#launch-a-role). Select the coder profile recorded for this task or the orchestrator's explicit escalation. Set the prepared worktree as cwd.*
+
+-```
+-Subagent (general-purpose):
+-  description: "Implement Task N: [task name]"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
+-  prompt: |
+-    You are implementing Task N: [task name]
++*Put the selected plan row, acceptance criteria, relevant decisions and dependency contracts in the brief. Include the task's code and test paths and required checks. For a fix round include the confirmed findings and the exact code or test paths authorized for the fix. Include the worktree commit instruction only when authorized.*
+
+-    ## Task Description
+-
+-    Read your task brief first: [BRIEF_FILE]
+-    It contains the full task text from the plan.
+-
+-    ## Context
+-
+-    [Scene-setting: where this fits, dependencies, architectural context]
+-
+-    ## Before You Begin
+-
+-    If you have questions about:
+-    - The requirements or acceptance criteria
+-    - The approach or implementation strategy
+-    - Dependencies or assumptions
+-    - Anything unclear in the task description
+-
+-    **Ask them now.** Raise any concerns before starting work.
+-
+-    ## Your Job
+-
+-    Once you're clear on requirements:
+-    1. Implement exactly what the task specifies
+-    2. Write tests (following TDD if task says to)
+-    3. Verify implementation works
+-    4. Commit your work
+-    5. Self-review (see below)
+-    6. Report back
+-
+-    Work from: [directory]
+-
+-    **While you work:** If you encounter something unexpected or unclear, **ask questions**.
+-    It's always OK to pause and clarify. Don't guess or make assumptions.
+-
+-    While iterating, run the focused test for what you're changing; run the
+-    full suite once before committing, not after every edit.
+-
+-    ## You Do Not Dispatch Subagents
+-
+-    Do all of this task's work yourself. Never spawn a subagent to
+-    implement part of the task, and above all never spawn a reviewer to
+-    check your work. Self-review (below) means reading your own diff.
+-    Review is the controller's job: after you report, it dispatches a
+-    fresh reviewer against your diff. A reviewer you spawn duplicates
+-    that review at full cost, and its approval counts for nothing in
+-    the process. If you catch yourself thinking "an independent review
+-    would strengthen my report" — that review is already scheduled.
+-    Report instead.
+-
+-    ## Code Organization
+-
+-    You reason best about code you can hold in context at once, and your edits are more
+-    reliable when files are focused. Keep this in mind:
+-    - Follow the file structure defined in the plan
+-    - Each file should have one clear responsibility with a well-defined interface
+-    - If a file you're creating is growing beyond the plan's intent, stop and report
+-      it as DONE_WITH_CONCERNS — don't split files on your own without plan guidance
+-    - If an existing file you're modifying is already large or tangled, work carefully
+-      and note it as a concern in your report
+-    - In existing codebases, follow established patterns. Improve code you're touching
+-      the way a good developer would, but don't restructure things outside your task.
+-
+-    ## When You're in Over Your Head
+-
+-    It is always OK to stop and say "this is too hard for me." Bad work is worse than
+-    no work. You will not be penalized for escalating.
+-
+-    **STOP and escalate when:**
+-    - The task requires architectural decisions with multiple valid approaches
+-    - You need to understand code beyond what was provided and can't find clarity
+-    - You feel uncertain about whether your approach is correct
+-    - The task involves restructuring existing code in ways the plan didn't anticipate
+-    - You've been reading file after file trying to understand the system without progress
+-
+-    **How to escalate:** Report back with status BLOCKED or NEEDS_CONTEXT. Describe
+-    specifically what you're stuck on, what you've tried, and what kind of help you need.
+-    The controller can provide more context, re-dispatch with a more capable model,
+-    or break the task into smaller pieces.
+-
+-    ## Before Reporting Back: Self-Review
+-
+-    Review your work with fresh eyes. Ask yourself:
+-
+-    **Completeness:**
+-    - Did I fully implement everything in the spec?
+-    - Did I miss any requirements?
+-    - Are there edge cases I didn't handle?
+-
+-    **Quality:**
+-    - Is this my best work?
+-    - Are names clear and accurate (match what things do, not how they work)?
+-    - Is the code clean and maintainable?
+-
+-    **Discipline:**
+-    - Did I avoid overbuilding (YAGNI)?
+-    - Did I only build what was requested?
+-    - Did I follow existing patterns in the codebase?
+-
+-    **Testing:**
+-    - Do tests actually verify behavior (not just mock behavior)?
+-    - Did I follow TDD if required?
+-    - Are tests comprehensive?
+-    - Is the test output pristine (no stray warnings or noise)?
+-
+-    If you find issues during self-review, fix them now before reporting.
+-
+-    ## After Review Findings
+-
+-    If the task review finds issues, you will be resumed with the findings.
+-    Fix them, re-run the tests that cover the amended code, and append a fix
+-    report to your report file: what you changed, the covering tests you
+-    ran, the command, and the output. Reviewers will not re-run tests for
+-    you — your report is the test evidence. Then reply with the same short
+-    status contract as your first report.
+-
+-    ## Report Format
+-
+-    Write your full report to [REPORT_FILE]:
+-    - What you implemented (or what you attempted, if blocked)
+-    - What you tested and test results
+-    - **TDD Evidence** (if TDD was required for this task):
+-      - RED: command run, relevant failing output before implementation, and why the failure was expected
+-      - GREEN: command run and relevant passing output after implementation
+-    - Files changed
+-    - Self-review findings (if any)
+-    - Any issues or concerns
+-
+-    Then report back with ONLY (under 15 lines — the detail lives in the
+-    report file):
+-    - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+-    - Commits created (short SHA + subject)
+-    - One-line test summary (e.g. "14/14 passing, output pristine")
+-    - Your concerns, if any
+-    - The report file path
+-
+-    If BLOCKED or NEEDS_CONTEXT, put the specifics in the final message
+-    itself — the controller acts on it directly.
+-
+-    Use DONE_WITH_CONCERNS if you completed the work but have doubts about correctness.
+-    Use BLOCKED if you cannot complete the task. Use NEEDS_CONTEXT if you need
+-    information that wasn't provided. Never silently produce work you're unsure about.
+-```
++*For new behavior, capture the focused test failure before implementation. Make the requested change, run the required checks and inspect the resulting diff. Report commands and outcomes, changed paths, any authorized commit and remaining blockers. Use outcome error for an incomplete task and include any concrete question.*
+diff --git a/skills/subagent-driven-development/task-reviewer-prompt.md b/skills/subagent-driven-development/task-reviewer-prompt.md
+--- a/skills/subagent-driven-development/task-reviewer-prompt.md
++++ b/skills/subagent-driven-development/task-reviewer-prompt.md
+@@ -1,209 +1,5 @@
+-# Task Reviewer Prompt Template
++# *Review a Theseus task*
+
+-Use this template when dispatching a task reviewer subagent. The reviewer
+-reads the task's diff once and returns two verdicts: spec compliance and
+-code quality.
++*Use the [Codex role adapter](../using-theseus/references/codex-tools.md#launch-a-role) with role `reviewer`, the prepared worktree as cwd and empty write scope.*
+
+-**Purpose:** Verify one task's implementation matches its requirements (nothing
+-more, nothing less) and is well-built (clean, tested, maintainable)
+-
+-```
+-Subagent (general-purpose):
+-  description: "Review Task N (spec + quality)"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
+-  prompt: |
+-    You are reviewing one task's implementation: first whether it matches its
+-    requirements, then whether it is well-built. This is a task-scoped gate,
+-    not a merge review — a broad whole-branch review happens separately after
+-    all tasks are complete.
+-
+-    ## What Was Requested
+-
+-    Read the task brief: [BRIEF_FILE]
+-
+-    Global constraints from the spec/design that bind this task:
+-    [GLOBAL_CONSTRAINTS]
+-
+-    ## What the Implementer Claims They Built
+-
+-    Read the implementer's report: [REPORT_FILE]
+-
+-    ## Diff Under Review
+-
+-    **Base:** [BASE_SHA]
+-    **Head:** [HEAD_SHA]
+-    **Diff file:** [DIFF_FILE]
+-
+-    Read the diff file once — it contains the commit list, a stat summary,
+-    and the full diff with surrounding context, and it is your view of the
+-    change. The diff's context lines ARE the changed files: do not Read a
+-    changed file separately unless a hunk you must judge is cut off
+-    mid-function — and say so in your report. Do not re-run git commands.
+-    If the diff file is missing, fetch the diff yourself:
+-    `git diff --stat [BASE_SHA]..[HEAD_SHA]` and `git diff [BASE_SHA]..[HEAD_SHA]`.
+-    Do not crawl the broader codebase. Inspect code outside the diff only
+-    to evaluate a concrete risk you can name — one focused check per named
+-    risk, and name both the risk and what you checked in your report.
+-    Cross-cutting changes are legitimate named risks: if the diff changes
+-    lock ordering, a function or API contract, or shared mutable state,
+-    checking the call sites is the right method.
+-
+-    Your review is read-only on this checkout. Do not mutate the working
+-    tree, the index, HEAD, or branch state in any way.
+-
+-    ## You Do Not Dispatch Subagents
+-
+-    Do all of this review yourself. Never spawn a subagent to review part
+-    of the diff, and never spawn another reviewer for a second opinion.
+-    This process already provides every review seat the work gets; a
+-    reviewer you spawn duplicates one of them at full cost, and its
+-    verdict counts for nothing. If the diff feels too large for one
+-    pass, review it in passes yourself and say so in your report.
+-
+-    ## Do Not Trust the Report
+-
+-    Treat the implementer's report as unverified claims about the code. It
+-    may be incomplete, inaccurate, or optimistic. Verify the claims against
+-    the diff. Design rationales in the report are claims too: "left it per
+-    YAGNI," "kept it simple deliberately," or any other justification is the
+-    implementer grading their own work. Judge the code on its merits — a
+-    stated rationale never downgrades a finding's severity.
+-
+-    ## Tests
+-
+-    The implementer already ran the tests and reported results with TDD
+-    evidence for exactly this code. Do not re-run the suite to confirm their
+-    report. Run a test only when reading the code raises a specific doubt
+-    that no existing run answers — and then a focused test, never a
+-    package-wide suite, race detector run, or repeated/high-count loop. If
+-    heavy validation seems warranted, recommend it in your report instead of
+-    running it. If you cannot run commands in this environment, name the
+-    test you would run.
+-
+-    Warnings or other noise in the implementer's reported test output are
+-    findings — test output should be pristine.
+-
+-    Evidence you cannot see is not evidence that doesn't exist. If the
+-    report or its test evidence looks truncated, or you cannot locate the
+-    results it claims, re-read the file at its stated path — and if it is
+-    genuinely missing or garbled, report that as a gap for the controller.
+-    Re-running the suite to regenerate what you failed to read is not
+-    verification; illegibility of the evidence is not invalidation of it.
+-
+-    ## Part 1: Spec Compliance
+-
+-    Compare the diff against What Was Requested:
+-
+-    - **Missing:** requirements they skipped, missed, or claimed without
+-      implementing
+-    - **Extra:** features that weren't requested, over-engineering, unneeded
+-      "nice to haves"
+-    - **Misunderstood:** right feature built the wrong way, wrong problem
+-      solved
+-
+-    If the brief lists several files each with its own change (a batched
+-    dispatch), check the diff against that list file by file: every listed
+-    file must have its corresponding hunk. A listed file the diff never
+-    touches is a Missing finding, no matter how clean the rest of the
+-    batch looks.
+-
+-    If a requirement cannot be verified from this diff alone (it lives in
+-    unchanged code or spans tasks), report it as a ⚠️ item instead of
+-    broadening your search.
+-
+-    ## Part 2: Code Quality
+-
+-    **Code quality:**
+-    - Clean separation of concerns?
+-    - Proper error handling?
+-    - DRY without premature abstraction?
+-    - Edge cases handled?
+-
+-    **Tests:**
+-    - Do the new and changed tests verify real behavior, not mocks?
+-    - Are the task's edge cases covered?
+-
+-    **Structure:**
+-    - Does each file have one clear responsibility with a well-defined interface?
+-    - Are units decomposed so they can be understood and tested independently?
+-    - Is the implementation following the file structure from the plan?
+-    - Did this change create new files that are already large, or
+-      significantly grow existing files? (Don't flag pre-existing file
+-      sizes — focus on what this change contributed.)
+-
+-    Your report should point at evidence: file:line references for every
+-    finding and for any check you would otherwise answer with a bare
+-    "yes." A tight report that cites lines gives the controller everything
+-    it needs.
+-
+-    Your final message is the report itself: begin directly with the
+-    spec-compliance verdict. Every line is a verdict, a finding with
+-    file:line, or a check you ran — no preamble, no process narration,
+-    no closing summary.
+-
+-    ## Calibration
+-
+-    Categorize issues by actual severity. Not everything is Critical.
+-    Important means this task cannot be trusted until it is fixed: incorrect
+-    or fragile behavior, a missed requirement, or maintainability damage you
+-    would block a merge over — verbatim duplication of a logic block,
+-    swallowed errors, tests that assert nothing. "Coverage could be broader"
+-    and polish suggestions are Minor.
+-    If the plan or brief explicitly mandates something this rubric calls a
+-    defect (a test that asserts nothing, verbatim duplication of a logic
+-    block), that IS a finding — report it as Important, labeled
+-    plan-mandated. The plan's authorship does not grade its own work; the
+-    human decides.
+-    Acknowledge what was done well before listing issues — accurate praise
+-    helps the implementer trust the rest of the feedback.
+-
+-    ## Output Format
+-
+-    ### Spec Compliance
+-
+-    - ✅ Spec compliant | ❌ Issues found: [what's missing/extra/misunderstood,
+-      with file:line references]
+-    - ⚠️ Cannot verify from diff: [requirements you could not verify from the
+-      diff alone, and what the controller should check — report alongside the
+-      ✅/❌ verdict for everything you could verify]
+-
+-    ### Strengths
+-    [What's well done? Be specific.]
+-
+-    ### Issues
+-
+-    #### Critical (Must Fix)
+-    #### Important (Should Fix)
+-    #### Minor (Nice to Have)
+-
+-    For each issue: file:line, what's wrong, why it matters, how to fix
+-    (if not obvious).
+-
+-    ### Assessment
+-
+-    **Task quality:** [Approved | Needs fixes]
+-
+-    **Reasoning:** [1-2 sentence technical assessment]
+-```
+-
+-**Placeholders:**
+-- `[MODEL]` — REQUIRED: reviewer model per SKILL.md Model Selection
+-- `[BRIEF_FILE]` — REQUIRED: the task brief file (`bash scripts/task-brief PLAN N`,
+-  run by its absolute path, from the working tree you're executing in,
+-  prints the path; same file the implementer worked from)
+-- `[GLOBAL_CONSTRAINTS]` — the binding requirements copied verbatim from
+-  the plan's Global Constraints section or the spec: exact values, formats,
+-  and stated relationships between components (not process rules — those
+-  are already in this template)
+-- `[REPORT_FILE]` — REQUIRED: the file the implementer wrote its detailed
+-  report to
+-- `[BASE_SHA]` — commit before this task
+-- `[HEAD_SHA]` — current commit
+-- `[DIFF_FILE]` — REQUIRED: the path the controller wrote the review
+-  package to (`bash scripts/review-package PLAN_FILE BASE HEAD`, run by its
+-  absolute path, from the working tree you're executing in, prints the unique
+-  path it wrote; the package never enters the controller's context)
+-
+-**Reviewer returns:** Spec Compliance verdict (✅/❌/⚠️), Strengths, Issues
+-(Critical/Important/Minor), Task quality verdict
++*Give the reviewer the selected plan row, applicable requirements, verified base and head, actual diff, coder report and required checks. Judge the diff against the requirements and check code quality and regressions. Confirm claims from the report against the diff or verification evidence. Report findings with location, effect, evidence and whether each blocks acceptance. State which checks ran and their results. Use outcome error if a blocker or an unavailable mandatory check prevents acceptance.*
+diff --git a/skills/subagent-driven-development/re-review-prompt.md b/skills/subagent-driven-development/re-review-prompt.md
+--- a/skills/subagent-driven-development/re-review-prompt.md
++++ b/skills/subagent-driven-development/re-review-prompt.md
+@@ -1,116 +1,5 @@
+-# Scoped Re-Review Prompt Template
++# *Verify fixes from a Theseus review*
+
+-Use this template when dispatching a re-review after a fix round. The
+-re-reviewer verifies the findings were addressed and checks the fix diff for
+-new breakage. It is not a fresh review — the full review already happened.
++*Use the [Codex role adapter](../using-theseus/references/codex-tools.md#launch-a-role) with role `reviewer`, the prepared worktree as cwd and empty write scope.*
+
+-**Purpose:** Verify each finding from the previous review was addressed, and
+-that the fix itself broke nothing.
+-
+-```
+-Subagent (general-purpose):
+-  description: "Re-review Task N fix round R"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
+-  prompt: |
+-    You are re-reviewing one task's fix round. A previous review produced
+-    findings; an implementer has attempted to fix them. Your job is to
+-    verdict each finding and inspect the fix diff — nothing else.
+-
+-    ## The Task
+-
+-    Read the task brief: [BRIEF_FILE]
+-
+-    ## The Findings Under Verification
+-
+-    [FINDINGS]
+-
+-    ## The Fix
+-
+-    Read the implementer's report (fix reports are appended at the end):
+-    [REPORT_FILE]
+-
+-    **Fix base:** [FIX_BASE_SHA] (the head the previous review saw)
+-    **Head:** [HEAD_SHA]
+-    **Diff file:** [DIFF_FILE]
+-
+-    Read the diff file once — it contains the fix commits, a stat summary,
+-    and the fix diff with surrounding context. Do not re-run git commands.
+-    If the diff file is missing, fetch the diff yourself:
+-    `git diff --stat [FIX_BASE_SHA]..[HEAD_SHA]` and
+-    `git diff [FIX_BASE_SHA]..[HEAD_SHA]`.
+-
+-    Your review is read-only on this checkout. Do not mutate the working
+-    tree, the index, HEAD, or branch state in any way.
+-
+-    ## You Do Not Dispatch Subagents
+-
+-    Do all of this review yourself. Never spawn a subagent to review part
+-    of the diff, and never spawn another reviewer for a second opinion.
+-    This process already provides every review seat the work gets; a
+-    reviewer you spawn duplicates one of them at full cost, and its
+-    verdict counts for nothing. If the diff feels too large for one
+-    pass, review it in passes yourself and say so in your report.
+-
+-    ## Scope
+-
+-    Your scope is the findings list and the fix diff. Verdict every finding.
+-    Inspect the fix diff for new problems the fix itself introduced. Do NOT
+-    re-review code the fix did not touch: if you notice an issue entirely
+-    outside the fix diff, report it under Out-of-Scope Observations — it
+-    does not block this task and does not extend the loop. A broad
+-    whole-branch review happens after all tasks are complete.
+-
+-    ## Tests
+-
+-    The implementer re-ran the tests covering the amended code and appended
+-    the results to the report file. Treat the report as unverified claims:
+-    confirm the fix report names the covering tests and shows their output,
+-    and verify the claims against the diff. Do not re-run the suite to
+-    confirm their report. Run a test only when reading the code raises a
+-    specific doubt that no existing run answers — and then a focused test,
+-    never a package-wide suite.
+-
+-    ## Output Format
+-
+-    Your final message is the report itself: begin directly with the first
+-    finding's verdict. Every line is a verdict, a finding with file:line,
+-    or a check you ran — no preamble, no process narration.
+-
+-    ### Finding Verdicts
+-
+-    For each finding in The Findings Under Verification, in order:
+-    - **[finding one-liner]** — ADDRESSED | NOT ADDRESSED, with file:line
+-      evidence. "Attempted" is not addressed: the specific defect must no
+-      longer exist.
+-
+-    ### New Breakage in the Fix Diff
+-
+-    Anything the fix itself broke or introduced, with severity
+-    (Critical/Important/Minor) and file:line. "None" if clean.
+-
+-    ### Out-of-Scope Observations
+-
+-    Issues you noticed entirely outside the fix diff. Non-blocking; the
+-    controller ledgers these for the final review. "None" if none.
+-
+-    ### Verdict
+-
+-    **Fix round:** [All findings addressed, no new Critical/Important
+-    breakage | Findings remain open] — list the open ones.
+-```
+-
+-**Placeholders:**
+-- `[MODEL]` — REQUIRED: reviewer model per SKILL.md Model Selection; scoped
+-  re-reviews of small fix diffs take a cheap-to-mid tier
+-- `[BRIEF_FILE]` — the task brief file (same file the implementer worked from)
+-- `[FINDINGS]` — the Critical/Important findings and spec gaps from the
+-  previous review, copied verbatim, one per bullet
+-- `[REPORT_FILE]` — the implementer's report file (fix reports appended)
+-- `[FIX_BASE_SHA]` — the head the previous review saw
+-- `[HEAD_SHA]` — current commit
+-- `[DIFF_FILE]` — the path `bash scripts/review-package PLAN_FILE FIX_BASE HEAD` printed
+-  (run by its absolute path, from the working tree you're executing in)
+-
+-**Re-reviewer returns:** per-finding verdicts (ADDRESSED / NOT ADDRESSED),
+-new breakage in the fix diff, out-of-scope observations, and a round verdict.
++*Give the reviewer the task requirements, confirmed findings, fix report, actual fix diff with its base and head, and the required checks. Verify each reported fix and inspect the new diff for regressions. Report evidence for each finding, any new blockers and actual check results. Use outcome error if an unresolved blocker or an unavailable mandatory check prevents acceptance.*
+diff --git a/skills/requesting-code-review/code-reviewer.md b/skills/requesting-code-review/code-reviewer.md
+--- a/skills/requesting-code-review/code-reviewer.md
++++ b/skills/requesting-code-review/code-reviewer.md
+@@ -1,198 +1,5 @@
+-# Code Reviewer Prompt Template
++# *Review Theseus changes*
+
+-Use this template when dispatching a code reviewer subagent.
++*Use the [Codex role adapter](../using-theseus/references/codex-tools.md#launch-a-role) with role `reviewer` and empty write scope. Use the selected development worktree as cwd.*
+
+-**Purpose:** Review completed work against requirements and code quality standards before it cascades into more work.
+-
+-```
+-Subagent (general-purpose):
+-  description: "Review code changes"
+-  prompt: |
+-    You are a Senior Code Reviewer with expertise in software architecture,
+-    design patterns, and best practices. Your job is to review completed work
+-    against its plan or requirements and identify issues before they cascade.
+-
+-    ## What Was Implemented
+-
+-    [DESCRIPTION]
+-
+-    ## Requirements / Plan
+-
+-    [PLAN_OR_REQUIREMENTS]
+-
+-    ## Git Range to Review
+-
+-    **Base:** [BASE_SHA]
+-    **Head:** [HEAD_SHA]
+-
+-    ```bash
+-    git diff --stat [BASE_SHA]..[HEAD_SHA]
+-    git diff [BASE_SHA]..[HEAD_SHA]
+-    ```
+-
+-    ## The spec is a vision document
+-
+-    The spec says what the software must do. It does not enumerate every
+-    input, environment, or condition the software will meet. For behavior
+-    the spec is silent on, judge by what a reasonable person using this
+-    software would expect: a reasonable person's expectation is a
+-    requirement, and a spec's silence is not permission. Grade such
+-    findings by their effect on that person, not by whether the spec
+-    mentions the trigger.
+-
+-    ## Declined to judge
+-
+-    Before your verdict, list every behavior you considered and set aside
+-    as outside the plan or spec, one line each, with the reason. The
+-    executor rules on each line; nothing you set aside is dropped
+-    silently. An empty list means you set nothing aside.
+-
+-    ## Read-Only Review
+-
+-    Your review is read-only on this checkout. Do not mutate the working tree, the index, HEAD, or branch state in any way. Use tools like `git show`, `git diff`, and `git log` to inspect history. If you need a working copy of a different revision, check it out into a separate temporary directory (e.g. `git worktree add /tmp/review-[SHA] [SHA]`) — never move HEAD on this checkout.
+-
+-    ## You Do Not Dispatch Subagents
+-
+-    Do all of this review yourself. Never spawn a subagent to review part
+-    of the diff, and never spawn another reviewer for a second opinion.
+-    This process already provides every review seat the work gets; a
+-    reviewer you spawn duplicates one of them at full cost, and its
+-    verdict counts for nothing. If the diff feels too large for one
+-    pass, review it in passes yourself and say so in your report.
+-
+-    ## What to Check
+-
+-    **Plan alignment:**
+-    - Does the implementation match the plan / requirements?
+-    - Are deviations justified improvements, or problematic departures?
+-    - Is all planned functionality present?
+-
+-    **Code quality:**
+-    - Clean separation of concerns?
+-    - Proper error handling?
+-    - Type safety where applicable?
+-    - DRY without premature abstraction?
+-    - Edge cases handled?
+-
+-    **Architecture:**
+-    - Sound design decisions?
+-    - Reasonable scalability and performance?
+-    - Security concerns?
+-    - Integrates cleanly with surrounding code?
+-
+-    **Testing:**
+-    - Tests verify real behavior, not mocks?
+-    - Edge cases covered?
+-    - Integration tests where they matter?
+-    - All tests passing?
+-
+-    **Production readiness:**
+-    - Migration strategy if schema changed?
+-    - Backward compatibility considered?
+-    - Documentation complete?
+-    - No obvious bugs?
+-
+-    ## Calibration
+-
+-    Categorize issues by actual severity. Not everything is Critical.
+-    Acknowledge what was done well before listing issues — accurate praise
+-    helps the implementer trust the rest of the feedback.
+-
+-    If you find significant deviations from the plan, flag them specifically
+-    so the implementer can confirm whether the deviation was intentional.
+-    If you find issues with the plan itself rather than the implementation,
+-    say so.
+-
+-    ## Output Format
+-
+-    ### Strengths
+-    [What's well done? Be specific.]
+-
+-    ### Issues
+-
+-    #### Critical (Must Fix)
+-    [Bugs, security issues, data loss risks, broken functionality]
+-
+-    #### Important (Should Fix)
+-    [Architecture problems, missing features, poor error handling, test gaps]
+-
+-    #### Minor (Nice to Have)
+-    [Code style, optimization opportunities, documentation polish]
+-
+-    For each issue:
+-    - File:line reference
+-    - What's wrong
+-    - Why it matters
+-    - How to fix (if not obvious)
+-
+-    ### Recommendations
+-    [Improvements for code quality, architecture, or process]
+-
+-    ### Assessment
+-
+-    **Ready to merge?** [Yes | No | With fixes]
+-
+-    **Reasoning:** [1-2 sentence technical assessment]
+-
+-    ## Critical Rules
+-
+-    **DO:**
+-    - Categorize by actual severity
+-    - Be specific (file:line, not vague)
+-    - Explain WHY each issue matters
+-    - Acknowledge strengths
+-    - Give a clear verdict
+-
+-    **DON'T:**
+-    - Say "looks good" without checking
+-    - Mark nitpicks as Critical
+-    - Give feedback on code you didn't actually read
+-    - Be vague ("improve error handling")
+-    - Avoid giving a clear verdict
+-```
+-
+-**Placeholders:**
+-- `[DESCRIPTION]` — brief summary of what was built
+-- `[PLAN_OR_REQUIREMENTS]` — what it should do (plan file path, task text, or requirements)
+-- `[BASE_SHA]` — starting commit
+-- `[HEAD_SHA]` — ending commit
+-
+-**Reviewer returns:** Strengths, Issues (Critical / Important / Minor), Recommendations, Assessment
+-
+-## Example Output
+-
+-```
+-### Strengths
+-- Clean database schema with proper migrations (db.ts:15-42)
+-- Comprehensive test coverage (18 tests, all edge cases)
+-- Good error handling with fallbacks (summarizer.ts:85-92)
+-
+-### Issues
+-
+-#### Important
+-1. **Missing help text in CLI wrapper**
+-   - File: index-conversations:1-31
+-   - Issue: No --help flag, users won't discover --concurrency
+-   - Fix: Add --help case with usage examples
+-
+-2. **Date validation missing**
+-   - File: search.ts:25-27
+-   - Issue: Invalid dates silently return no results
+-   - Fix: Validate ISO format, throw error with example
+-
+-#### Minor
+-1. **Progress indicators**
+-   - File: indexer.ts:130
+-   - Issue: No "X of Y" counter for long operations
+-   - Impact: Users don't know how long to wait
+-
+-### Recommendations
+-- Add progress reporting for user experience
+-- Consider config file for excluded projects (portability)
+-
+-### Assessment
+-
+-**Ready to merge: With fixes**
+-
+-**Reasoning:** Core implementation is solid with good architecture and tests. Important issues (help text, date validation) are easily fixed and don't affect core functionality.
+-```
++*Provide the scoped requirements, actual diff with base and head, prior findings and evidence of the required checks. Confirm that the changes satisfy requirements and preserve applicable behavior, including affected dependants. Report each finding with location, effect, evidence and whether it blocks acceptance. Report any mandatory verification still pending. Use outcome error while a blocker or mandatory verification remains unresolved.*

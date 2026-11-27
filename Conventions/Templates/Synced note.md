@@ -11,3 +11,8 @@ Briefly explain the file and when to edit it, giving prompts for creation if nee
 Keep the complete, unchanged working file in the single code block below, including its own frontmatter if present and its final newline. Keep explanations and commands above. Use a fence longer than any backtick fence inside the file.
 ````text
 ````
+
+File can be splitted into several fragments separated by comments (comments are evething outside the code block)
+
+````text
+````

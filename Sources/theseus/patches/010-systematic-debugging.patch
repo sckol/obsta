@@ -1,0 +1,45 @@
+diff --git a/skills/systematic-debugging/SKILL.md b/skills/systematic-debugging/SKILL.md
+--- a/skills/systematic-debugging/SKILL.md
++++ b/skills/systematic-debugging/SKILL.md
+@@ -18,5 +18,21 @@
+ ```
+
+ If you haven't completed Phase 1, you cannot propose fixes.
++
++## *Bug fixes in a Theseus vault*
++
++*Start from the exact building-block note and affected implementation and test paths. Examine the error, the working case, recent changes and the inputs at the failing boundary. Record a symptom-specific failing invocation and a separate probe that tests the suspected cause against a working comparison. If either evidence check is inconclusive, report the concrete missing input or observation before proceeding.*
++
++*Put temporary scripts, output and diagnosis records under `.obsta-experiments/<ticket_id>/`. Use the exact ticket ID, including nested segments. Keep the regression test in an authorized block test path, run it before changing the implementation, and include it in the mandatory checks. For a block that keeps its tests in the implementation file, point `regression` to that file and supply the exact inline test insertion, including its line breaks, as `case.regression_code`. If there is no test framework, a permanent executable reproducer in the block can serve as the test.*
++
++*Use [diagnostics.py](../using-theseus/scripts/diagnostics.py) with Python 3 and a JSON object on stdin. Supply `case` with `root` (main vault), `ticket_id`, `problem` (stable kebab-case ID for the same failure across activations and role changes), `block`, exact `files`, and `regression` (one of those file paths). Supply `action` and its `arguments`. A command is `{"argv": ["python3", "path/to/check.py"], "cwd": "."}`, with `cwd` relative to the active workspace and `.` as the default. Read the journal for the observed exit status and output. The helper checks the supplied evidence. Establish that the probe actually distinguishes the cause before recording it.*
++
++| *Action* | *Arguments and next step* |
++| --- | --- |
++| *`diagnose`* | *Pass `symptom`, `cause`, `reproduce`, expected `failure_exit` and `failure_marker`, a separate `probe` and `probe_marker` for its successful observation, a specific diagnostic `question`, and an `architecture_question` about the affected design. For a worktree retry use the main vault's absolute path to any diagnostic script, with its working directory in the active workspace.* |
++| *`handoff`* | *For dependent work, after confirmation pass `slug`, `snapshot_a`, and exact additional authorized `inputs` to prepare or verify the worktree. Set `execute_after_plan` only when the ticket authorizes proceeding directly to implementation. Pass its returned root, decision, exact files and diagnostic evidence to the [planning helper](../using-theseus/scripts/planning.py). Have the planner make a Bug fix plan in that worktree and include the regression in required checks. The planned execution stage checks the scope of worktree changes. A small independent change in a single block proceeds locally after confirmation.* |
++| *`begin`* | *Create the permanent test in the workspace identified by the route. Pass `command` with an argv argument naming that test, plus `mandatory` as the other required commands. Proceed with the scoped implementation only when the test has failed for the reproduced cause and the helper reports `ready_to_fix`.* |
++| *`finish`* | *Rerun the unchanged regression and mandatory checks after the change. If the reproduced error persists, record the new evidence and repeat the investigation. If a check cannot establish the result, resolve the verification blocker and rerun it. On the third failed fix for the same problem, preserve the journal and any worktree and ask the returned architecture question before a further change.* |
++| *`continue`* | *After receiving the user’s authorization for a different approach, keep the same problem ID and pass `authorized: true`, the chosen `approach`, and the user’s `decision`. The helper retains the failed fixes and starts a fresh three-attempt window. Reconfirm the cause before any further edits.* |
+
+ ## When to Use
+@@ -174,7 +190,7 @@
+    - Automated test if possible
+    - One-off test script if no framework
+    - MUST have before fixing
+-   - Use the `superpowers:test-driven-development` skill for writing proper failing tests
++   - *Use the [test-driven development skill](../test-driven-development/SKILL.md) to write a failing test.*
+-
++
+ 2. **Implement Single Fix**
+    - Address the root cause identified
+@@ -186,7 +202,7 @@
+    - Test passes now?
+    - No other tests broken?
+    - Issue actually resolved?
+-   - Use the `superpowers:verification-before-completion` skill before claiming success
++   - *Use the [verification skill](../verification-before-completion/SKILL.md) before claiming success.*
+-
++
+ 4. **If Fix Doesn't Work**
+    - STOP

@@ -22,9 +22,14 @@ __pycache__/
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 
+/.worktrees/
+
 # Local editor, agent and user settings
 /.codex/
 /.obsidian/
 /Configs/obsta.local.md
 # obsta-history: /Configs/obsta.local.md
+
+.obsta-experiments/
+# obsta-history: .obsta-experiments/
 ```
